@@ -11,33 +11,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-    
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
     - name: Set up JDK 8
       uses: actions/setup-java@v2
       with:
         java-version: '8'
         distribution: 'adopt'
-        
+
     - name: Install CloudSim 3.0.3
       run: |
-        # Download CloudSim
         wget https://github.com/Cloudslab/cloudsim/archive/refs/tags/cloudsim-3.0.3.zip
         unzip cloudsim-3.0.3.zip
-        
-        # Install CloudSim to local Maven repository
         cd cloudsim-cloudsim-3.0.3/modules/cloudsim
         mvn install -DskipTests
-        
+
     - name: Build with Maven
       run: mvn -B package --file pom.xml
-      
+
     - name: Run Auto-Scaling Tests
       run: mvn test -Dtest=AutoScalingTests
-      
+
     - name: Generate JaCoCo test coverage report
       run: mvn jacoco:report
-      
+
     - name: Archive test reports
       uses: actions/upload-artifact@v3
       with:
