@@ -36,8 +36,9 @@ jobs:
     - name: Generate JaCoCo test coverage report
       run: mvn jacoco:report
 
-    - name: Archive test reports
-      uses: actions/upload-artifact@v2
-      with:
-        name: test-reports
-        path: target/site/jacoco/
+	  - name: Archive test reports
+	    uses: actions/upload-artifact@v3
+	    with:
+	      name: test-reports
+	      path: target/site/jacoco/
+
