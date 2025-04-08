@@ -22,7 +22,7 @@
             <artifactId>cloudsim</artifactId>
             <version>3.0.3</version>
             <scope>system</scope>
-            <systemPath>C:\Users\samk2\eclipse-workspace\cloudsim-autoscaling/libs/cloudsim-3.0.3.jar</systemPath>
+            <systemPath>${project.basedir}/libs/cloudsim-3.0.3.jar</systemPath>
         </dependency>
 
         <dependency>
@@ -30,7 +30,7 @@
             <artifactId>commons-math4</artifactId>
             <version>4.0-beta1</version>
             <scope>system</scope>
-            <systemPath>C:\Users\samk2\eclipse-workspace\cloudsim-autoscaling/libs/commons-math4-legacy-4.0-beta1.jar</systemPath>
+            <systemPath>${project.basedir}/libs/commons-math4-legacy-4.0-beta1.jar</systemPath>
         </dependency>
 
         <!-- Testing dependencies -->

@@ -20,17 +20,16 @@ jobs:
         java-version: '8'
         distribution: 'temurin'
 
-    - name: Cache Maven packages
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2
-        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-        restore-keys: ${{ runner.os }}-m2-
+    - name: Create libs directory
+      run: mkdir -p libs
+
+    - name: Download CloudSim 3.0.3
+      run: |
+        wget https://github.com/Cloudslab/cloudsim/releases/download/cloudsim-3.0.3/cloudsim-3.0.3.jar -O libs/cloudsim-3.0.3.jar
+        wget https://repo1.maven.org/maven2/org/apache/commons/commons-math4-legacy/4.0-beta1/commons-math4-legacy-4.0-beta1.jar -O libs/commons-math4-legacy-4.0-beta1.jar
 
     - name: Build with Maven
-      run: mvn -B package --file pom.xml
-      env:
-        MAVEN_OPTS: -Dhttps.protocols=TLSv1.2
+      run: mvn -B package
 
     - name: Run Auto-Scaling Tests
       run: mvn test -Dtest=AutoScalingTests
