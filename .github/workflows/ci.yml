@@ -23,10 +23,17 @@ jobs:
     - name: Create libs directory
       run: mkdir -p libs
 
-    - name: Download CloudSim 3.0.3
+    - name: Download required JARs
       run: |
-        wget https://github.com/Cloudslab/cloudsim/releases/download/cloudsim-3.0.3/cloudsim-3.0.3.jar -O libs/cloudsim-3.0.3.jar
         wget https://repo1.maven.org/maven2/org/apache/commons/commons-math4-legacy/4.0-beta1/commons-math4-legacy-4.0-beta1.jar -O libs/commons-math4-legacy-4.0-beta1.jar
+        wget https://github.com/Cloudslab/cloudsim/releases/download/v3.0.3/cloudsim-3.0.3.jar -O libs/cloudsim-3.0.3.jar || echo "CloudSim JAR not found – fallback manually or build from source"
+
+    - name: Install CloudSim from source (fallback)
+      run: |
+        wget https://github.com/Cloudslab/cloudsim/archive/refs/tags/cloudsim-3.0.3.zip
+        unzip cloudsim-3.0.3.zip
+        cd cloudsim-cloudsim-3.0.3
+        mvn install -DskipTests
 
     - name: Build with Maven
       run: mvn -B package
