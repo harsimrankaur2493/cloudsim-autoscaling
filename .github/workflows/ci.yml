@@ -28,12 +28,20 @@ jobs:
         wget https://repo1.maven.org/maven2/org/apache/commons/commons-math4-legacy/4.0-beta1/commons-math4-legacy-4.0-beta1.jar -O libs/commons-math4-legacy-4.0-beta1.jar
         wget https://github.com/Cloudslab/cloudsim/releases/download/v3.0.3/cloudsim-3.0.3.jar -O libs/cloudsim-3.0.3.jar || echo "CloudSim JAR not found – fallback manually or build from source"
 
-    - name: Install CloudSim core module only from source
+    - name: Install CloudSim JAR into local Maven repository
       run: |
-        wget https://github.com/Cloudslab/cloudsim/archive/refs/tags/cloudsim-3.0.3.zip
-        unzip cloudsim-3.0.3.zip
-        cd cloudsim-cloudsim-3.0.3/modules/cloudsim
-        mvn clean install -DskipTests -Dmaven.javadoc.skip=true -Djavadoc.skip=true -Ddoclint=none
+        # Download and install CloudSim JAR directly to local Maven repo
+        wget -q https://github.com/Cloudslab/cloudsim/releases/download/v3.0.3/cloudsim-3.0.3.jar -O cloudsim-3.0.3.jar
+        mvn install:install-file -Dfile=cloudsim-3.0.3.jar -DgroupId=org.cloudbus.cloudsim -DartifactId=cloudsim -Dversion=3.0.3 -Dpackaging=jar
+        
+        # If download fails, build from source
+        if [ $? -ne 0 ]; then
+          echo "Failed to download CloudSim JAR, building from source..."
+          wget https://github.com/Cloudslab/cloudsim/archive/refs/tags/cloudsim-3.0.3.zip
+          unzip cloudsim-3.0.3.zip
+          cd cloudsim-cloudsim-3.0.3/modules/cloudsim
+          mvn clean install -DskipTests -Dmaven.javadoc.skip=true
+        fi
 
     - name: Build with Maven
       run: mvn -B package

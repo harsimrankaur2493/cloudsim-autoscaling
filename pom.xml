@@ -16,16 +16,22 @@
     </properties>
 
     <dependencies>
+        <!-- CloudSim as a system dependency -->
         <dependency>
             <groupId>org.cloudbus.cloudsim</groupId>
             <artifactId>cloudsim</artifactId>
             <version>${cloudsim.version}</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/libs/cloudsim-3.0.3.jar</systemPath>
         </dependency>
         
+        <!-- Commons Math as a system dependency -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-math4-legacy</artifactId>
             <version>4.0-beta1</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/libs/commons-math4-legacy-4.0-beta1.jar</systemPath>
         </dependency>
         
         <dependency>
@@ -69,7 +75,8 @@
                     </execution>
                 </executions>
             </plugin>
-
+            
+            <!-- Include system dependencies in the final JAR -->
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <version>3.6.0</version>
@@ -82,6 +89,7 @@
                     <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>
+                    <includeScope>system</includeScope>
                 </configuration>
                 <executions>
                     <execution>
