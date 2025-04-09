@@ -48,9 +48,8 @@ jobs:
     - name: Build with Maven
       run: mvn -B package
 
-  	- name: Run Auto-Scaling Tests with Logging
+    - name: Run Auto-Scaling Tests with Logging
       run: mvn -B test -Dtest=AutoScalingTests -DtrimStackTrace=false
-
 
     - name: Generate JaCoCo test coverage report
       run: mvn jacoco:report
