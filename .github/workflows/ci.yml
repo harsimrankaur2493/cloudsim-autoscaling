@@ -19,29 +19,31 @@ jobs:
       with:
         java-version: '8'
         distribution: 'temurin'
+        cache: maven
 
     - name: Create libs directory
       run: mkdir -p libs
 
-    - name: Download required JARs
+    - name: Download Commons Math JAR
       run: |
         wget https://repo1.maven.org/maven2/org/apache/commons/commons-math4-legacy/4.0-beta1/commons-math4-legacy-4.0-beta1.jar -O libs/commons-math4-legacy-4.0-beta1.jar
-        wget https://github.com/Cloudslab/cloudsim/releases/download/v3.0.3/cloudsim-3.0.3.jar -O libs/cloudsim-3.0.3.jar || echo "CloudSim JAR not found – fallback manually or build from source"
 
-    - name: Install CloudSim JAR into local Maven repository
+    - name: Setup CloudSim
       run: |
-        # Download and install CloudSim JAR directly to local Maven repo
-        wget -q https://github.com/Cloudslab/cloudsim/releases/download/v3.0.3/cloudsim-3.0.3.jar -O cloudsim-3.0.3.jar
-        mvn install:install-file -Dfile=cloudsim-3.0.3.jar -DgroupId=org.cloudbus.cloudsim -DartifactId=cloudsim -Dversion=3.0.3 -Dpackaging=jar
+        # Download CloudSim source
+        wget https://github.com/Cloudslab/cloudsim/archive/refs/tags/cloudsim-3.0.3.zip -O cloudsim-3.0.3.zip
+        unzip cloudsim-3.0.3.zip
         
-        # If download fails, build from source
-        if [ $? -ne 0 ]; then
-          echo "Failed to download CloudSim JAR, building from source..."
-          wget https://github.com/Cloudslab/cloudsim/archive/refs/tags/cloudsim-3.0.3.zip
-          unzip cloudsim-3.0.3.zip
-          cd cloudsim-cloudsim-3.0.3/modules/cloudsim
-          mvn clean install -DskipTests -Dmaven.javadoc.skip=true
-        fi
+        # Build CloudSim from source
+        cd cloudsim-cloudsim-3.0.3/modules/cloudsim
+        mvn clean install -DskipTests -Dmaven.javadoc.skip=true
+        
+        # Copy the built JAR to libs directory
+        cp target/cloudsim-3.0.3.jar ../../../libs/
+        
+        # Install JAR to local Maven repo
+        cd ../../../
+        mvn install:install-file -Dfile=libs/cloudsim-3.0.3.jar -DgroupId=org.cloudbus.cloudsim -DartifactId=cloudsim -Dversion=3.0.3 -Dpackaging=jar
 
     - name: Build with Maven
       run: mvn -B package
