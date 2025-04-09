@@ -28,21 +28,21 @@ jobs:
         wget https://repo1.maven.org/maven2/org/apache/commons/commons-math4-legacy/4.0-beta1/commons-math4-legacy-4.0-beta1.jar -O libs/commons-math4-legacy-4.0-beta1.jar
         wget https://github.com/Cloudslab/cloudsim/releases/download/v3.0.3/cloudsim-3.0.3.jar -O libs/cloudsim-3.0.3.jar || echo "CloudSim JAR not found – fallback manually or build from source"
 
-	- name: Install CloudSim from source (fallback)
-	  run: |
-	    wget https://github.com/Cloudslab/cloudsim/archive/refs/tags/cloudsim-3.0.3.zip
-	    unzip cloudsim-3.0.3.zip
-	    cd cloudsim-cloudsim-3.0.3
-	    
-	    # Skip Javadoc completely during the build process
-	    mvn clean install -DskipTests -Dmaven.javadoc.skip=true -Djavadoc.skip=true -Ddoclint=none
-	    
-	    # If there are issues with the distribution module, try building without it
-	    if [ $? -ne 0 ]; then
-	      echo "Failed to build all modules, trying to install core modules only..."
-	      cd modules/cloudsim
-	      mvn clean install -DskipTests -Dmaven.javadoc.skip=true -Djavadoc.skip=true -Ddoclint=none
-	    fi
+    - name: Install CloudSim from source (fallback)
+      run: |
+        wget https://github.com/Cloudslab/cloudsim/archive/refs/tags/cloudsim-3.0.3.zip
+        unzip cloudsim-3.0.3.zip
+        cd cloudsim-cloudsim-3.0.3
+        
+        # Skip Javadoc completely during the build process
+        mvn clean install -DskipTests -Dmaven.javadoc.skip=true -Djavadoc.skip=true -Ddoclint=none
+        
+        # If there are issues with the distribution module, try building without it
+        if [ $? -ne 0 ]; then
+          echo "Failed to build all modules, trying to install core modules only..."
+          cd modules/cloudsim
+          mvn clean install -DskipTests -Dmaven.javadoc.skip=true -Djavadoc.skip=true -Ddoclint=none
+        fi
 
     - name: Build with Maven
       run: mvn -B package
