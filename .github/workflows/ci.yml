@@ -30,23 +30,19 @@ jobs:
 
     - name: Setup CloudSim
       run: |
-        # Download CloudSim source
         wget https://github.com/Cloudslab/cloudsim/archive/refs/tags/cloudsim-3.0.3.zip -O cloudsim-3.0.3.zip
         unzip cloudsim-3.0.3.zip
-        
-        # Build CloudSim from source
         cd cloudsim-cloudsim-3.0.3/modules/cloudsim
         mvn clean install -DskipTests -Dmaven.javadoc.skip=true
-        
-        # Copy the built JAR to libs directory
         cp target/cloudsim-3.0.3.jar ../../../libs/
-        
-        # Install JAR to local Maven repo
         cd ../../../
         mvn install:install-file -Dfile=libs/cloudsim-3.0.3.jar -DgroupId=org.cloudbus.cloudsim -DartifactId=cloudsim -Dversion=3.0.3 -Dpackaging=jar
 
     - name: Build with Maven
       run: mvn -B package
+
+    - name: Run Dynamic Auto-Scaling Simulation
+      run: mvn exec:java -Dexec.mainClass="org.cloudbus.cloudsim.examples.DynamicAutoScalingSimulation"
 
     - name: Run Auto-Scaling Tests with Logging
       run: mvn -B test -Dtest=AutoScalingTests -DtrimStackTrace=false
@@ -54,7 +50,7 @@ jobs:
     - name: Generate JaCoCo test coverage report
       run: mvn jacoco:report
 
-    - name: Archive test reports
+    - name: Archive test coverage reports
       uses: actions/upload-artifact@v4
       with:
         name: test-reports
