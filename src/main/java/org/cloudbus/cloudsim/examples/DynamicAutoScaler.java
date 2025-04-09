@@ -2,8 +2,6 @@ package org.cloudbus.cloudsim.examples;
 
 import org.cloudbus.cloudsim.*;
 import org.cloudbus.cloudsim.core.CloudSim;
-import org.cloudbus.cloudsim.core.SimEntity;
-import org.cloudbus.cloudsim.core.SimEvent;
 import org.cloudbus.cloudsim.provisioners.BwProvisionerSimple;
 import org.cloudbus.cloudsim.provisioners.PeProvisionerSimple;
 import org.cloudbus.cloudsim.provisioners.RamProvisionerSimple;
@@ -23,71 +21,56 @@ public class DynamicAutoScaler {
 
     public static void main(String[] args) {
         try {
-            // Step 1: Initialize CloudSim
+            // Initialize CloudSim
             int numUsers = 1;
             Calendar calendar = Calendar.getInstance();
             boolean traceFlag = false;
             CloudSim.init(numUsers, calendar, traceFlag);
 
-            // Step 2: Create Datacenter and Broker
             Datacenter datacenter = createDatacenter("Datacenter_1");
             broker = createBroker();
             int brokerId = broker.getId();
 
-            // Step 3: Create Initial VMs and Cloudlets
             createVMs(brokerId, INITIAL_VM_COUNT);
             createCloudlets(brokerId, 20);
 
-            // Step 4: Submit lists to broker
             broker.submitVmList(vmList);
             broker.submitCloudletList(cloudletList);
 
-            // Step 5: Add AutoScaler as an entity
-            AutoScaler autoScaler = new AutoScaler("AutoScaler", MONITOR_INTERVAL, vmList, broker,
-                    CPU_UTIL_THRESHOLD, MAX_VM_COUNT);
-            CloudSim.addEntity(autoScaler);
+            // Schedule dynamic scaling before simulation starts
+            CloudSim.runClockTick(); // Advance initial tick before monitoring
+            monitorAndScale(datacenter); // Scaling logic
 
-            // Step 6: Start Simulation
+            // Start and stop simulation
             CloudSim.startSimulation();
             CloudSim.stopSimulation();
 
-            // Step 7: Print Results
-            printCloudletResults(broker.getCloudletReceivedList());
+            List<Cloudlet> finishedCloudlets = broker.getCloudletReceivedList();
+            printCloudletResults(finishedCloudlets);
 
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    // ================= Helper Methods =================
-
     private static Datacenter createDatacenter(String name) throws Exception {
         List<Host> hostList = new ArrayList<>();
-        int mips = 1000;
-        int ram = 2048;
-        long storage = 1000000;
-        int bw = 10000;
+        int mips = 1000, ram = 2048, bw = 10000;
+        long storage = 1_000_000;
 
         for (int i = 0; i < 2; i++) {
-            List<Pe> peList = new ArrayList<>();
-            peList.add(new Pe(0, new PeProvisionerSimple(mips)));
-
-            hostList.add(new Host(i, new RamProvisionerSimple(ram),
-                    new BwProvisionerSimple(bw), storage, peList,
-                    new VmSchedulerTimeShared(peList)));
+            List<Pe> peList = Collections.singletonList(new Pe(0, new PeProvisionerSimple(mips)));
+            Host host = new Host(i,
+                    new RamProvisionerSimple(ram),
+                    new BwProvisionerSimple(bw),
+                    storage,
+                    peList,
+                    new VmSchedulerTimeShared(peList));
+            hostList.add(host);
         }
 
-        String arch = "x86";
-        String os = "Linux";
-        String vmm = "Xen";
-        double time_zone = 10.0;
-        double cost = 3.0;
-        double costPerMem = 0.05;
-        double costPerStorage = 0.001;
-        double costPerBw = 0.0;
-
         DatacenterCharacteristics characteristics = new DatacenterCharacteristics(
-                arch, os, vmm, hostList, time_zone, cost, costPerMem, costPerStorage, costPerBw);
+                "x86", "Linux", "Xen", hostList, 10.0, 3.0, 0.05, 0.001, 0.0);
 
         return new Datacenter(name, characteristics, new VmAllocationPolicySimple(hostList), new LinkedList<>(), 0.0);
     }
@@ -105,81 +88,54 @@ public class DynamicAutoScaler {
     }
 
     private static void createCloudlets(int brokerId, int count) {
-        UtilizationModel utilizationModel = new UtilizationModelFull();
+        UtilizationModel model = new UtilizationModelFull();
         for (int i = 0; i < count; i++) {
-            Cloudlet cloudlet = new Cloudlet(i, 40000, 1, 300, 300,
-                    utilizationModel, utilizationModel, utilizationModel);
+            Cloudlet cloudlet = new Cloudlet(i, 40000, 1, 300, 300, model, model, model);
             cloudlet.setUserId(brokerId);
             cloudletList.add(cloudlet);
         }
     }
 
+    private static void monitorAndScale(Datacenter datacenter) {
+        for (int time = 0; time <= 100; time += MONITOR_INTERVAL) {
+            double avgUtil = estimateAverageCpuUtil();
+
+            if (avgUtil > CPU_UTIL_THRESHOLD && vmList.size() < MAX_VM_COUNT) {
+                int newVmId = vmList.size();
+                Vm vm = new Vm(newVmId, broker.getId(), 1000, 1, 1024, 1000, 10000,
+                        "Xen", new CloudletSchedulerTimeShared());
+
+                List<Vm> newVmList = new ArrayList<>();
+                newVmList.add(vm);
+                broker.submitVmList(newVmList);  // Must re-submit updated VM list
+                vmList.add(vm);
+
+                System.out.printf("Added new VM at time %d due to high CPU utilization: %.2f%n", time, avgUtil);
+            }
+
+            CloudSim.runClockTick();  // advance simulation step
+        }
+    }
+
+    private static double estimateAverageCpuUtil() {
+        Random rand = new Random();
+        return 0.6 + rand.nextDouble() * 0.4; // Simulate between 60%-100%
+    }
+
     private static void printCloudletResults(List<Cloudlet> list) {
         String indent = "    ";
-        System.out.println("========== OUTPUT ==========");
-        System.out.println("Cloudlet ID" + indent + "STATUS" + indent +
-                "Data center ID" + indent + "VM ID" + indent + "Time");
+        System.out.println("========== CLOUDLET OUTPUT ==========");
+        System.out.println("Cloudlet ID" + indent + "STATUS" + indent + "Datacenter ID" +
+                indent + "VM ID" + indent + "Execution Time");
 
         for (Cloudlet cloudlet : list) {
-            System.out.print(cloudlet.getCloudletId() + indent + indent);
             if (cloudlet.getStatus() == Cloudlet.SUCCESS) {
-                System.out.println("SUCCESS" + indent + indent +
-                        cloudlet.getResourceId() + indent + indent + cloudlet.getVmId() +
-                        indent + cloudlet.getActualCPUTime());
+                System.out.printf("%d%sSUCCESS%s%d%s%d%s%.2f%n",
+                        cloudlet.getCloudletId(), indent,
+                        indent, cloudlet.getResourceId(),
+                        indent, cloudlet.getVmId(),
+                        indent, cloudlet.getActualCPUTime());
             }
         }
-    }
-}
-
-// ================= AutoScaler Class =================
-
-class AutoScaler extends SimEntity {
-
-    private final int interval;
-    private final List<Vm> vmList;
-    private final DatacenterBroker broker;
-    private final double cpuThreshold;
-    private final int maxVmCount;
-
-    public AutoScaler(String name, int interval, List<Vm> vmList, DatacenterBroker broker,
-                      double cpuThreshold, int maxVmCount) {
-        super(name);
-        this.interval = interval;
-        this.vmList = vmList;
-        this.broker = broker;
-        this.cpuThreshold = cpuThreshold;
-        this.maxVmCount = maxVmCount;
-    }
-
-    @Override
-    public void startEntity() {
-        schedule(getId(), interval, 1);
-    }
-
-    @Override
-    public void processEvent(SimEvent ev) {
-        double util = estimateAverageCpuUtil();
-
-        if (util > cpuThreshold && vmList.size() < maxVmCount) {
-            int vmId = vmList.size();
-            Vm vm = new Vm(vmId, broker.getId(), 1000, 1, 1024, 1000, 10000,
-                    "Xen", new CloudletSchedulerTimeShared());
-            broker.submitVmList(Collections.singletonList(vm));
-            vmList.add(vm);
-
-            System.out.println(CloudSim.clock() + ": AutoScaler - Added VM #" + vmId + " due to CPU util = " + util);
-        }
-
-        schedule(getId(), interval, 1); // Schedule next check
-    }
-
-    @Override
-    public void shutdownEntity() {
-        System.out.println("AutoScaler: shutting down at time " + CloudSim.clock());
-    }
-
-    private double estimateAverageCpuUtil() {
-        Random r = new Random();
-        return 0.6 + r.nextDouble() * 0.4;  // Simulate 60–100% CPU usage
     }
 }
