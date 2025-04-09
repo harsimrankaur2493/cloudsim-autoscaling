@@ -51,6 +51,27 @@ jobs:
     - name: Run Auto-Scaling Tests with Logging
       run: mvn -B test -Dtest=AutoScalingTests -DtrimStackTrace=false
 
+    - name: Run Dynamic Auto-Scaling Simulation
+      run: |
+        echo "Running DynamicAutoScalingSimulation..."
+        mvn exec:java -Dexec.mainClass="org.cloudbus.cloudsim.examples.DynamicAutoScalingSimulation" -Dexec.classpathScope=test | tee simulation-output.log
+        
+        # Validate expected output
+        if grep -q "Starting Dynamic Auto-Scaling Simulation" simulation-output.log && \
+           grep -q "AutoScalingBroker is starting" simulation-output.log && \
+           grep -q "Simulation completed" simulation-output.log; then
+          echo "Simulation ran successfully with expected output"
+        else
+          echo "Simulation output validation failed"
+          exit 1
+        fi
+
+    - name: Upload Simulation Output
+      uses: actions/upload-artifact@v4
+      with:
+        name: simulation-output
+        path: simulation-output.log
+
     - name: Generate JaCoCo test coverage report
       run: mvn jacoco:report
 
@@ -58,4 +79,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: test-reports
-        path: target/site/jacoco/
+        path: |
+          target/site/jacoco/
+          simulation-output.log
