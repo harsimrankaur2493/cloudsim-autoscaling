@@ -4,396 +4,489 @@ import org.cloudbus.cloudsim.*;
 import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.core.CloudSimTags;
 import org.cloudbus.cloudsim.core.SimEvent;
-import org.cloudbus.cloudsim.provisioners.BwProvisionerSimple;
-import org.cloudbus.cloudsim.provisioners.PeProvisionerSimple;
-import org.cloudbus.cloudsim.provisioners.RamProvisionerSimple;
+import org.cloudbus.cloudsim.provisioners.*;
 
 import java.text.DecimalFormat;
 import java.util.*;
 
 /**
- * A CloudSim example showing how to implement auto-scaling based on CPU usage.
- * Compatible with CloudSim 3.0.3
+ * Enhanced Dynamic Auto-Scaling Simulation for CloudSim 3.0.3
+ * Demonstrates automatic VM scaling based on CPU utilization and workload
  */
 public class DynamicAutoScalingSimulation {
 
+    // Lists to track resources
     private static List<Cloudlet> cloudletList;
     private static List<Vm> vmList;
-    private static int nextVmId = 0;
-    private static int nextCloudletId = 0;
+    
+    // Simulation configuration
+    private static final int SIMULATION_DURATION = 1000; // seconds
+    private static final int INITIAL_CLOUDLETS = 2;
+    private static final int CLOUDLETS_AT_100S = 5;
+    private static final int CLOUDLETS_AT_200S = 8;
+    private static final int CLOUDLETS_AT_300S = 2;
     
     // Auto-scaling thresholds
-    private static final double SCALE_UP_THRESHOLD = 0.8; // 80% CPU utilization
+    private static final double SCALE_UP_THRESHOLD = 0.7; // 70% CPU utilization
     private static final double SCALE_DOWN_THRESHOLD = 0.3; // 30% CPU utilization
-    private static final int MAX_VMS = 10;
+    private static final int MAX_VMS = 5;
     private static final int MIN_VMS = 1;
     
-    // For testing and analysis
-    private static int activeVmCount = 0;
-    private static Map<Double, Integer> timeToVmCountMap = new HashMap<>();
+    // Resource tracking
+    private static int nextVmId = 0;
+    private static int nextCloudletId = 0;
+    private static Map<Double, Integer> scalingHistory = new TreeMap<>();
 
-    /**
-     * Creates main() to run this example.
-     *
-     * @param args the args
-     */
     public static void main(String[] args) {
-        Log.printLine("Starting Dynamic Auto-Scaling Simulation...");
+        Log.printLine("Starting Enhanced Dynamic Auto-Scaling Simulation...");
 
         try {
-            // Initialize the CloudSim package
-            int num_user = 1;
+            // Initialize CloudSim
+            int numUser = 1;
             Calendar calendar = Calendar.getInstance();
-            boolean trace_flag = false;
-            CloudSim.init(num_user, calendar, trace_flag);
+            boolean traceFlag = false;
+            CloudSim.init(numUser, calendar, traceFlag);
 
-            // Create Datacenter
-            Datacenter datacenter0 = createDatacenter("Datacenter_0");
-
-            // Create Auto-scaling Broker (custom broker that implements auto-scaling)
-            AutoScalingBroker broker = createAutoScalingBroker("AutoScalingBroker");
-            int brokerId = broker.getId();
-
-            // VM Parameters
-            int mips = 1000;
-            long size = 10000; // image size (MB)
-            int ram = 512; // vm memory (MB)
-            long bw = 1000;
-            int pesNumber = 1; // number of CPUs
-            String vmm = "Xen"; // VMM name
-
-            // Create initial VM
+            // Create infrastructure
+            Datacenter datacenter = createDatacenter("Datacenter_0");
+            AutoScalingBroker broker = createBroker("AutoScalingBroker");
+            
+            // Create initial VM and cloudlets
             vmList = new ArrayList<>();
-            Vm initialVm = createVm(brokerId, mips, pesNumber, ram, bw, size, vmm);
+            Vm initialVm = createVm(broker.getId(), 1000, 1, 512, 1000, 10000, "Xen");
             vmList.add(initialVm);
-            activeVmCount = 1;
-
-            // Submit initial VM list to the broker
             broker.submitVmList(vmList);
 
-            // Create initial cloudlet list
+            // Create initial workload
             cloudletList = new ArrayList<>();
+            createAndSubmitCloudlets(broker, broker.getId(), INITIAL_CLOUDLETS, 1);
             
-            // Start with some initial load
-            createAndSubmitCloudlets(broker, brokerId, 2, pesNumber);
-
-            // Schedule load changes to test auto-scaling
-            scheduleLoadChanges(broker);
+            // Schedule dynamic workload changes
+            scheduleWorkloadChanges(broker);
             
-            // Start the simulation
+            // Set termination time to prevent premature shutdown
+            CloudSim.terminateSimulation(SIMULATION_DURATION);
+            
+            // Start simulation
             CloudSim.startSimulation();
 
-            // Print results
-            List<Cloudlet> finishedCloudlets = broker.getCloudletReceivedList();
-            printCloudletList(finishedCloudlets);
-            
-            // Print VM scaling information
-            printScalingResults();
+            // Output results
+            printResults(broker.getCloudletReceivedList());
+            printScalingHistory();
             
             CloudSim.stopSimulation();
-            Log.printLine("Dynamic Auto-Scaling Simulation completed!");
+            Log.printLine("Simulation completed successfully!");
         } catch (Exception e) {
             e.printStackTrace();
-            Log.printLine("The simulation has been terminated due to an unexpected error");
+            Log.printLine("Simulation terminated due to error");
         }
     }
 
-    /**
-     * Creates a new VM with the next available ID
-     */
-    private static Vm createVm(int brokerId, int mips, int pesNumber, int ram, 
-                               long bw, long size, String vmm) {
-        Vm vm = new Vm(nextVmId++, brokerId, mips, pesNumber, ram, bw, size, vmm, 
-                        new CloudletSchedulerTimeShared());
-        return vm;
+    private static Datacenter createDatacenter(String name) {
+        // Host configuration
+        List<Pe> peList = new ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            peList.add(new Pe(i, new PeProvisionerSimple(1000)));
+        }
+
+        Host host = new Host(
+            0,
+            new RamProvisionerSimple(16384),   // 16GB RAM
+            new BwProvisionerSimple(10000),    // 10Gbps bandwidth
+            1000000,                          // 1TB storage
+            peList,
+            new VmSchedulerTimeShared(peList)
+        );
+
+        // Datacenter characteristics
+        DatacenterCharacteristics characteristics = new DatacenterCharacteristics(
+            "x86", "Linux", "Xen",
+            Collections.singletonList(host),
+            10.0, 3.0, 0.05, 0.001, 0.0);
+
+        try {
+            return new Datacenter(
+                name, characteristics,
+                new VmAllocationPolicySimple(Collections.singletonList(host)),
+                new LinkedList<>(), 0);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
     }
-    
-    /**
-     * Creates and submits new cloudlets to the broker
-     */
-    private static void createAndSubmitCloudlets(AutoScalingBroker broker, int brokerId, 
-                                             int numberOfCloudlets, int pesNumber) {
-        // Cloudlet parameters
-        long length = 40000;
-        long fileSize = 300;
-        long outputSize = 300;
+
+    private static Vm createVm(int brokerId, int mips, int pes, int ram, 
+                             long bw, long size, String vmm) {
+        return new Vm(
+            nextVmId++, brokerId, mips, pes, ram, bw, size, vmm,
+            new CloudletSchedulerTimeShared());
+    }
+
+    private static AutoScalingBroker createBroker(String name) throws Exception {
+        return new AutoScalingBroker(name);
+    }
+
+    private static void createAndSubmitCloudlets(AutoScalingBroker broker, int brokerId,
+                                              int count, int pes) {
+        List<Cloudlet> newCloudlets = new ArrayList<>();
         UtilizationModel utilizationModel = new UtilizationModelFull();
         
-        List<Cloudlet> newCloudlets = new ArrayList<>();
-        
-        for (int i = 0; i < numberOfCloudlets; i++) {
-            Cloudlet cloudlet = new Cloudlet(nextCloudletId++, length, pesNumber, fileSize, 
-                                      outputSize, utilizationModel, utilizationModel, utilizationModel);
+        for (int i = 0; i < count; i++) {
+            Cloudlet cloudlet = new Cloudlet(
+                nextCloudletId++, 10000, pes, 300, 300,
+                utilizationModel, utilizationModel, utilizationModel);
             cloudlet.setUserId(brokerId);
-            // Let the broker assign VMs
             newCloudlets.add(cloudlet);
         }
         
-        broker.submitCloudletList(newCloudlets);
         cloudletList.addAll(newCloudlets);
-    }
-    
-    /**
-     * Schedules load changes throughout the simulation to test auto-scaling
-     */
-    private static void scheduleLoadChanges(final AutoScalingBroker broker) {
-        // Define custom CloudSim tags for our events
-        final int LOAD_CHANGE_TAG = 10000;
-        final int VM_SCALING_CHECK_TAG = 10001;
-        
-        // Increase load at 100 seconds
-        CloudSim.send(broker.getId(), broker.getId(), 100, LOAD_CHANGE_TAG, 5);
-        
-        // Increase load further at 200 seconds
-        CloudSim.send(broker.getId(), broker.getId(), 200, LOAD_CHANGE_TAG, 8);
-        
-        // Decrease load at 300 seconds (some cloudlets will complete)
-        CloudSim.send(broker.getId(), broker.getId(), 300, LOAD_CHANGE_TAG, 2);
-        
-        // Schedule auto-scaling checks every 20 seconds
-        double time = 20;
-        while (time < 400) {  // Run for 400 seconds simulation time
-            CloudSim.send(broker.getId(), broker.getId(), time, VM_SCALING_CHECK_TAG, null);
-            time += 20;
-        }
-        
-        // Store these tags in the broker for use in event processing
-        broker.setLoadChangeTag(LOAD_CHANGE_TAG);
-        broker.setVmScalingCheckTag(VM_SCALING_CHECK_TAG);
+        broker.submitCloudletList(newCloudlets);
     }
 
-    /**
-     * Custom Datacenter Broker that implements auto-scaling logic
-     */
-    static class AutoScalingBroker extends DatacenterBroker {
+    private static void scheduleWorkloadChanges(AutoScalingBroker broker) {
+        final int LOAD_CHANGE = 10001;
+        final int SCALING_CHECK = 10002;
         
-        private int LOAD_CHANGE_TAG;
-        private int VM_SCALING_CHECK_TAG;
+        // Schedule workload changes
+        CloudSim.send(broker.getId(), broker.getId(), 100, LOAD_CHANGE, CLOUDLETS_AT_100S);
+        CloudSim.send(broker.getId(), broker.getId(), 200, LOAD_CHANGE, CLOUDLETS_AT_200S);
+        CloudSim.send(broker.getId(), broker.getId(), 300, LOAD_CHANGE, CLOUDLETS_AT_300S);
+        
+        // Schedule periodic scaling checks every 20 seconds
+        for (double time = 20; time < SIMULATION_DURATION; time += 20) {
+            CloudSim.send(broker.getId(), broker.getId(), time, SCALING_CHECK, null);
+        }
+        
+        broker.setCustomTags(LOAD_CHANGE, SCALING_CHECK);
+    }
+
+    private static void printResults(List<Cloudlet> cloudlets) {
+        DecimalFormat df = new DecimalFormat("###.##");
+        Log.printLine("\n========== CLOUDLET EXECUTION RESULTS ==========");
+        Log.printLine("ID\tStatus\tDC\tVM\tTime\tStart\tFinish");
+        
+        for (Cloudlet c : cloudlets) {
+            if (c.getCloudletStatus() == Cloudlet.SUCCESS) {
+                Log.printLine(String.format(
+                    "%d\t%s\t%d\t%d\t%s\t%s\t%s",
+                    c.getCloudletId(), "SUCCESS", c.getResourceId(), c.getVmId(),
+                    df.format(c.getActualCPUTime()), df.format(c.getExecStartTime()),
+                    df.format(c.getFinishTime())
+                ));
+            }
+        }
+    }
+
+    private static void printScalingHistory() {
+        Log.printLine("\n========== AUTO-SCALING HISTORY ==========");
+        Log.printLine("Time(s)\tVM Count");
+        
+        for (Map.Entry<Double, Integer> entry : scalingHistory.entrySet()) {
+            Log.printLine(String.format("%.1f\t%d", entry.getKey(), entry.getValue()));
+        }
+    }
+
+    static class AutoScalingBroker extends DatacenterBroker {
+        private int loadChangeTag;
+        private int scalingCheckTag;
+        private List<Cloudlet> pendingCloudlets;
+        private List<Vm> createdVmList;
         
         public AutoScalingBroker(String name) throws Exception {
             super(name);
+            pendingCloudlets = new ArrayList<>();
+            createdVmList = new ArrayList<>();
         }
         
-        public void setLoadChangeTag(int tag) {
-            this.LOAD_CHANGE_TAG = tag;
-        }
-        
-        public void setVmScalingCheckTag(int tag) {
-            this.VM_SCALING_CHECK_TAG = tag;
+        public void setCustomTags(int loadTag, int scalingTag) {
+            this.loadChangeTag = loadTag;
+            this.scalingCheckTag = scalingTag;
         }
         
         @Override
         protected void processOtherEvent(SimEvent ev) {
-            if (ev.getTag() == VM_SCALING_CHECK_TAG) {
-                processVmScaling();
-            } else if (ev.getTag() == LOAD_CHANGE_TAG) {
-                processLoadChange((int) ev.getData());
+            if (ev.getTag() == loadChangeTag) {
+                handleLoadChange((Integer) ev.getData());
+            } else if (ev.getTag() == scalingCheckTag) {
+                checkScaling();
             } else {
                 super.processOtherEvent(ev);
             }
         }
         
-        private void processLoadChange(int numberOfNewCloudlets) {
-            Log.printLine(CloudSim.clock() + ": Adding " + numberOfNewCloudlets + " new cloudlets");
-            createAndSubmitCloudlets(this, getId(), numberOfNewCloudlets, 1);
+        private void handleLoadChange(int cloudletCount) {
+            Log.printLine(String.format("%.1f: Adding %d new cloudlets", 
+                CloudSim.clock(), cloudletCount));
+            createAndSubmitCloudlets(this, getId(), cloudletCount, 1);
+            checkScaling();
         }
         
-        private void processVmScaling() {
-            // Calculate current utilization
-            double totalUtilization = 0;
-            int pendingCloudlets = 0;
+        @Override
+        public void submitCloudletList(List<? extends Cloudlet> list) {
+            super.submitCloudletList(list);
             
-            // Count running and pending cloudlets
-            for (Cloudlet cloudlet : getCloudletSubmittedList()) {
-                if (cloudlet.getCloudletStatus() == Cloudlet.INEXEC) {
-                    totalUtilization += 1.0; // Each running cloudlet contributes 100% of one VM
-                } else if (cloudlet.getCloudletStatus() == Cloudlet.CREATED ||
-                           cloudlet.getCloudletStatus() == Cloudlet.QUEUED) {
-                    pendingCloudlets++;
+            for (Cloudlet cloudlet : list) {
+                boolean assigned = false;
+                
+                if (!createdVmList.isEmpty()) {
+                    Vm vm = findLeastLoadedVm();
+                    if (vm != null) {
+                        cloudlet.setVmId(vm.getId());
+                        assigned = true;
+                        Integer datacenterId = getVmsToDatacentersMap().get(vm.getId());
+                        if (datacenterId != null) {
+                            sendNow(datacenterId, CloudSimTags.CLOUDLET_SUBMIT, cloudlet);
+                        } else {
+                            Log.printLine(String.format("%.1f: Warning: No datacenter mapping for VM %d", 
+                                CloudSim.clock(), vm.getId()));
+                            assigned = false;
+                        }
+                    }
+                }
+                
+                if (!assigned && !pendingCloudlets.contains(cloudlet)) {
+                    pendingCloudlets.add(cloudlet);
+                    Log.printLine(String.format("%.1f: Cloudlet %d added to pending list", 
+                        CloudSim.clock(), cloudlet.getCloudletId()));
+                }
+            }
+        }
+        
+        private Vm findLeastLoadedVm() {
+            if (createdVmList.isEmpty()) return null;
+            
+            // Simple round-robin assignment
+            int minLoad = Integer.MAX_VALUE;
+            Vm selectedVm = null;
+            
+            for (Vm vm : createdVmList) {
+                int vmLoad = getVmLoad(vm.getId());
+                if (vmLoad < minLoad) {
+                    minLoad = vmLoad;
+                    selectedVm = vm;
                 }
             }
             
-            // Calculate average utilization per VM
-            double avgUtilization = activeVmCount > 0 ? totalUtilization / activeVmCount : 0;
+            return selectedVm;
+        }
+        
+        private int getVmLoad(int vmId) {
+            int count = 0;
+            for (Cloudlet c : getCloudletList()) {
+                if (c.getVmId() == vmId && 
+                    (c.getCloudletStatus() == Cloudlet.INEXEC || 
+                     c.getCloudletStatus() == Cloudlet.QUEUED)) {
+                    count++;
+                }
+            }
+            return count;
+        }
+        
+        @Override
+        protected void processVmCreate(SimEvent ev) {
+            int[] data = (int[]) ev.getData();
+            if (data == null || data.length == 0) {
+                Log.printLine(String.format("%.1f: Error in VM creation - no VM IDs returned", 
+                    CloudSim.clock()));
+                return;
+            }
             
-            Log.printLine(CloudSim.clock() + ": Current utilization: " + avgUtilization + 
-                         ", Active VMs: " + activeVmCount +
-                         ", Pending cloudlets: " + pendingCloudlets);
+            for (int vmId : data) {
+                Vm vm = findVmById(vmId);
+                if (vm != null && !createdVmList.contains(vm)) {
+                    createdVmList.add(vm);
+                    Log.printLine(String.format("%.1f: VM #%d has been created", 
+                        CloudSim.clock(), vm.getId()));
+                    
+                    // Update VM to datacenter mapping
+                    if (!getVmsToDatacentersMap().containsKey(vm.getId())) {
+                        getVmsToDatacentersMap().put(vm.getId(), ev.getSource());
+                    }
+                } else if (vm == null) {
+                    Log.printLine(String.format("%.1f: Warning: Created VM #%d not found in submitted list", 
+                        CloudSim.clock(), vmId));
+                }
+            }
             
-            // Record VM count at this time for testing/verification
-            timeToVmCountMap.put(CloudSim.clock(), activeVmCount);
-            
-            // Check if scaling is needed
-            if (avgUtilization >= SCALE_UP_THRESHOLD && activeVmCount < MAX_VMS && pendingCloudlets > 0) {
-                // Scale up - add a new VM
-                scaleUp();
-            } else if (avgUtilization <= SCALE_DOWN_THRESHOLD && activeVmCount > MIN_VMS) {
-                // Scale down - remove a VM
-                scaleDown();
+            assignPendingCloudlets();
+        }
+        
+        private Vm findVmById(int vmId) {
+            for (Vm vm : getVmList()) {
+                if (vm.getId() == vmId) {
+                    return vm;
+                }
+            }
+            return null;
+        }
+        
+        private void assignPendingCloudlets() {
+            if (pendingCloudlets.isEmpty() || createdVmList.isEmpty()) return;
+
+            Iterator<Cloudlet> iterator = pendingCloudlets.iterator();
+            while (iterator.hasNext()) {
+                Cloudlet cloudlet = iterator.next();
+                Vm vm = findLeastLoadedVm();
+
+                if (vm != null) {
+                    Integer datacenterId = getVmsToDatacentersMap().get(vm.getId());
+                    
+                    if (datacenterId != null) {
+                        cloudlet.setVmId(vm.getId());
+                        sendNow(datacenterId, CloudSimTags.CLOUDLET_SUBMIT, cloudlet);
+                        iterator.remove();
+                        Log.printLine(String.format("%.1f: Assigned pending cloudlet %d to VM %d", 
+                            CloudSim.clock(), cloudlet.getCloudletId(), vm.getId()));
+                    } else {
+                        Log.printLine(String.format("%.1f: Warning: No datacenter mapping for VM %d", 
+                            CloudSim.clock(), vm.getId()));
+                    }
+                }
             }
         }
         
+        private void checkScaling() {
+            int running = 0;
+            int pending = pendingCloudlets.size();
+            
+            for (Cloudlet c : getCloudletList()) {
+                if (c.getCloudletStatus() == Cloudlet.INEXEC) {
+                    running++;
+                } else if (c.getCloudletStatus() == Cloudlet.CREATED || 
+                           c.getCloudletStatus() == Cloudlet.QUEUED) {
+                    pending++;
+                }
+            }
+            
+            int createdVms = createdVmList.size();
+            double utilization = createdVms > 0 ? (double)running / createdVms : 1.0;
+            
+            scalingHistory.put(CloudSim.clock(), createdVms);
+            
+            Log.printLine(String.format(
+                "%.1f: Utilization=%.2f, VMs=%d, Running=%d, Pending=%d",
+                CloudSim.clock(), utilization, createdVms, running, pending));
+            
+            if (createdVms == 0 && pending > 0) {
+                scaleUp();
+                return;
+            }
+            
+            if ((utilization >= SCALE_UP_THRESHOLD || pending > createdVms * 2) && 
+                createdVms < MAX_VMS && pending > 0) {
+                scaleUp();
+            } else if (utilization <= SCALE_DOWN_THRESHOLD && createdVms > MIN_VMS && pending == 0) {
+                scaleDown();
+            }
+            
+            assignPendingCloudlets();
+        }
+
         private void scaleUp() {
-            Log.printLine(CloudSim.clock() + ": SCALING UP - Adding a new VM");
+            Log.printLine(String.format("%.1f: Scaling UP - creating new VM", CloudSim.clock()));
             
-            // Create new VM with the same configuration as our initial VM
             Vm newVm = createVm(getId(), 1000, 1, 512, 1000, 10000, "Xen");
-            List<Vm> newVmList = new ArrayList<>();
-            newVmList.add(newVm);
+            List<Vm> tempVmList = new ArrayList<>();
+            tempVmList.add(newVm);
             
-            // Submit the new VM
-            submitVmList(newVmList);
-            DynamicAutoScalingSimulation.vmList.add(newVm); // ✅
-            activeVmCount++;
+            // Submit VM to broker
+            submitVmList(tempVmList);
+            
+            // Determine datacenter ID
+            int datacenterId = getFirstDatacenterId();
+            
+            // Send VM creation request to datacenter
+            sendNow(datacenterId, CloudSimTags.VM_CREATE, newVm);
+            
+            // Add to global VM list
+            vmList.add(newVm);
+        }
+        
+        private int getFirstDatacenterId() {
+            if (!getVmsToDatacentersMap().isEmpty()) {
+                return getVmsToDatacentersMap().values().iterator().next();
+            }
+            return 2; // Default datacenter ID
         }
         
         private void scaleDown() {
-            Log.printLine(CloudSim.clock() + ": SCALING DOWN - Removing a VM");
+            if (createdVmList.size() <= MIN_VMS) return;
             
-            // Find a VM with the least load
-            // For simplicity, we'll just remove the last added VM
-            // In a real scenario, you'd want to remove the least loaded VM
-            if (!vmList.isEmpty()) {
-                Vm vmToRemove = vmList.get(vmList.size() - 1);
-                vmList.remove(vmToRemove);
-                
-                // In CloudSim 3.0.3, we need to manually handle VM destruction
-                // by sending a VM_DESTROY event to the datacenter
-//                int datacenterIds[] = getDatacenterIdsList();
-                
-                List<Integer> datacenterIdList = getDatacenterIdsList();  // Returns List<Integer>
-                int[] datacenterIds = datacenterIdList.stream().mapToInt(Integer::intValue).toArray();
-
-                if (datacenterIds.length > 0) {
-                    int datacenterId = datacenterIds[0]; // Assuming only one datacenter for simplicity
-                    
-                    // Queue the VM destruction
-                    send(datacenterId, CloudSim.getMinTimeBetweenEvents(), 
-                         CloudSimTags.VM_DESTROY, vmToRemove);
-                    
-                    // Update VM count
-                    activeVmCount--;
-                }
+            // Find the least utilized VM
+            Vm toRemove = findLeastUtilizedVm();
+            if (toRemove == null) return;
+            
+            Log.printLine(String.format("%.1f: Scaling DOWN - destroying VM %d", 
+                CloudSim.clock(), toRemove.getId()));
+            
+            Integer datacenterId = getVmsToDatacentersMap().get(toRemove.getId());
+            if (datacenterId != null) {
+                sendNow(datacenterId, CloudSimTags.VM_DESTROY, toRemove);
+                createdVmList.remove(toRemove);
+                vmList.remove(toRemove);
+                getVmsToDatacentersMap().remove(toRemove.getId());
+            } else {
+                Log.printLine(String.format("%.1f: Warning: No datacenter mapping for VM %d", 
+                    CloudSim.clock(), toRemove.getId()));
             }
         }
-    }
-
-    private static AutoScalingBroker createAutoScalingBroker(String name) {
-        AutoScalingBroker broker = null;
-        try {
-            broker = new AutoScalingBroker(name);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
-        return broker;
-    }
-    
-    /**
-     * Prints scaling information for analysis
-     */
-    private static void printScalingResults() {
-        Log.printLine("\n========== AUTO-SCALING RESULTS ==========");
-        Log.printLine("Time (s)" + "\t" + "VM Count");
         
-        // Sort times for chronological display
-        List<Double> times = new ArrayList<>(timeToVmCountMap.keySet());
-        Collections.sort(times);
+        private Vm findLeastUtilizedVm() {
+            if (createdVmList.isEmpty()) return null;
+            
+            Vm leastUtilized = null;
+            double minUtilization = Double.MAX_VALUE;
+            
+            for (Vm vm : createdVmList) {
+                double utilization = getVmUtilization(vm.getId());
+                if (utilization < minUtilization) {
+                    minUtilization = utilization;
+                    leastUtilized = vm;
+                }
+            }
+            
+            return leastUtilized;
+        }
         
-        for (Double time : times) {
-            Log.printLine(String.format("%.2f", time) + "\t\t" + timeToVmCountMap.get(time));
+        private double getVmUtilization(int vmId) {
+            int running = 0;
+            for (Cloudlet c : getCloudletList()) {
+                if (c.getVmId() == vmId && c.getCloudletStatus() == Cloudlet.INEXEC) {
+                    running++;
+                }
+            }
+            return (double) running;
         }
-    }
-
-    /**
-     * Creates the datacenter.
-     *
-     * @param name the name
-     *
-     * @return the datacenter
-     */
-    private static Datacenter createDatacenter(String name) {
-        // Create a list to store our machine
-        List<Host> hostList = new ArrayList<Host>();
-
-        // Create List to store PEs or CPUs/Cores
-        List<Pe> peList = new ArrayList<Pe>();
-
-        int mips = 1000;
-
-        // Create PEs and add to the list
-        for (int i = 0; i < 8; i++) {
-            peList.add(new Pe(i, new PeProvisionerSimple(mips))); // 8 cores
-        }
-
-        // Create Host with its id and list of PEs
-        int hostId = 0;
-        int ram = 8192; // 8 GB RAM
-        long storage = 1000000; // 1 TB storage
-        int bw = 10000; // 10 Gbps
-
-        hostList.add(
-                new Host(
-                        hostId,
-                        new RamProvisionerSimple(ram),
-                        new BwProvisionerSimple(bw),
-                        storage,
-                        peList,
-                        new VmSchedulerTimeShared(peList)
-                )
-        );
-
-        // Create a DatacenterCharacteristics object
-        String arch = "x86"; 
-        String os = "Linux"; 
-        String vmm = "Xen";
-        double time_zone = 10.0; 
-        double cost = 3.0; 
-        double costPerMem = 0.05; 
-        double costPerStorage = 0.001; 
-        double costPerBw = 0.0; 
-        LinkedList<Storage> storageList = new LinkedList<Storage>();
-
-        DatacenterCharacteristics characteristics = new DatacenterCharacteristics(
-                arch, os, vmm, hostList, time_zone, cost, costPerMem, costPerStorage, costPerBw);
-
-        // Create a PowerDatacenter object
-        Datacenter datacenter = null;
-        try {
-            datacenter = new Datacenter(name, characteristics, new VmAllocationPolicySimple(hostList), storageList, 0);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return datacenter;
-    }
-
-    /**
-     * Prints the Cloudlet objects.
-     *
-     * @param list list of Cloudlets
-     */
-    private static void printCloudletList(List<Cloudlet> list) {
-        int size = list.size();
-        Cloudlet cloudlet;
-
-        String indent = "    ";
-        Log.printLine();
-        Log.printLine("========== OUTPUT ==========");
-        Log.printLine("Cloudlet ID" + indent + "STATUS" + indent +
-                "Data center ID" + indent + "VM ID" + indent + "Time" + indent + "Start Time" + indent + "Finish Time");
-
-        DecimalFormat dft = new DecimalFormat("###.##");
-        for (int i = 0; i < size; i++) {
-            cloudlet = list.get(i);
-            Log.print(indent + cloudlet.getCloudletId() + indent + indent);
-
-            if (cloudlet.getCloudletStatus() == Cloudlet.SUCCESS) {
-                Log.print("SUCCESS");
-
-                Log.printLine(indent + indent + cloudlet.getResourceId() + indent + indent + indent + cloudlet.getVmId() +
-                        indent + indent + dft.format(cloudlet.getActualCPUTime()) + indent + indent + dft.format(cloudlet.getExecStartTime()) +
-                        indent + indent + dft.format(cloudlet.getFinishTime()));
+        
+        @Override
+        protected void processCloudletReturn(SimEvent ev) {
+            Cloudlet cloudlet = (Cloudlet) ev.getData();
+            getCloudletReceivedList().add(cloudlet);
+            Log.printLine(CloudSim.clock() + ": " + getName() + ": Cloudlet " + 
+                cloudlet.getCloudletId() + " received");
+            
+            boolean allComplete = true;
+            for (Cloudlet c : getCloudletSubmittedList()) {
+                if (c.getCloudletStatus() != Cloudlet.SUCCESS && 
+                    c.getCloudletStatus() != Cloudlet.FAILED) {
+                    allComplete = false;
+                    break;
+                }
+            }
+            
+            if (allComplete && pendingCloudlets.isEmpty() && 
+                CloudSim.clock() > SIMULATION_DURATION - 50) {
+                Log.printLine(CloudSim.clock() + ": " + getName() + 
+                    ": All Cloudlets executed. Finishing...");
+                
+                for (Vm vm : new ArrayList<>(createdVmList)) {
+                    Log.printLine(CloudSim.clock() + ": " + getName() + 
+                        ": Destroying VM #" + vm.getId());
+                    Integer datacenterId = getVmsToDatacentersMap().get(vm.getId());
+                    if (datacenterId != null) {
+                        sendNow(datacenterId, CloudSimTags.VM_DESTROY, vm);
+                    }
+                }
             }
         }
     }
